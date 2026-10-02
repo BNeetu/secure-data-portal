@@ -1,0 +1,30 @@
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# ── Node ──
+node_modules/
+dist/
+.vite/
+
+# ── Secrets & runtime data — NEVER commit these ──
+.env*
+!.env.example
+backend/app/data/users.json
+backend/app/data/audit_log.jsonl
+backend/app/data/uploads/*
+!backend/app/data/uploads/.gitkeep
+backend/app/app/data/users.json
+backend/app/app/data/audit_log.jsonl
+backend/app/app/data/uploads/*
+!backend/app/app/data/uploads/.gitkeep
+
+# ── OS / Editor ──
+.DS_Store
+*.log
+.vscode/
+.idea/

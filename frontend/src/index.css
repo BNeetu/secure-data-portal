@@ -1,0 +1,35 @@
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F5F5;
+  --surface:#FFFFFF;
+  --surface2:#F0F0F0;
+  --surface3:#E8E8E8;
+  --border:#D6D6D6;
+  --border2:#C4C4C4;
+  --border-hover:#AAAAAA;
+  --accent:#1F4E79;
+  --accent-soft:#2E6DA4;
+  --accent2:#4472C4;
+  --accent3:#5B9BD5;
+  --text:#333333;
+  --text2:#555555;
+  --muted:#777777;
+  --muted2:#AAAAAA;
+  --card:#FFFFFF;
+  --card2:#F9F9F9;
+  --green:#70AD47;
+  --red:#C00000;
+  --amber:#FFC000;
+  --orange:#ED7D31;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Inter',sans-serif;min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+input,select,button,textarea{font-family:inherit}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--surface2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted2)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+@keyframes pulse2{0%,100%{opacity:1}50%{opacity:0.4}}

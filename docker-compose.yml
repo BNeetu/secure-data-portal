@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: sdp-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      # Persist the JSON user store + audit log across container restarts.
+      # Uploaded Excel files are intentionally NOT persisted long-term —
+      # they live in this volume only for the configured retention window.
+      - sdp_data:/app/app/data
+
+  frontend:
+    build: ./frontend
+    container_name: sdp-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  sdp_data:
