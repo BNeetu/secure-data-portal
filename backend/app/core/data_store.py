@@ -1,5 +1,5 @@
 """
-In-memory dataset store — per requirements, no database is used.
+Supabase-backed cloud dataset store with an in-memory local fallback.
 
 Keyed by (department, sub_department, data_type). Each slot can now hold
 MULTIPLE uploaded files (not just the latest one) — every successful upload
@@ -19,7 +19,9 @@ from typing import Optional, Set
 
 from fastapi import WebSocket
 
+from app.core.config import settings
 from app.core.departments import slot_key
+from app.core.supabase_client import delete_objects, get_supabase, supabase_enabled
 
 _lock = threading.Lock()
 
@@ -34,9 +36,34 @@ def _empty_slot() -> dict:
     return {"files": []}
 
 
+def _purge_expired_supabase_files():
+    client = get_supabase()
+    cutoff = time.time() - settings.UPLOAD_RETENTION_HOURS * 3600
+    result = client.table("portal_files").select("id,file_path").lt("uploaded_at", cutoff).execute()
+    if not result.data:
+        return
+    delete_objects([row["file_path"] for row in result.data if row.get("file_path")])
+    client.table("portal_files").delete().in_("id", [row["id"] for row in result.data]).execute()
+
+
 def add_file_to_slot(department: str, subdepartment: str, data_type: str,
                       data: dict, filename: str, uploaded_by: str, file_path: Optional[str] = None) -> str:
     """Appends a new file to the slot. Returns the new file's unique id."""
+    if supabase_enabled():
+        file_id = uuid.uuid4().hex[:12]
+        get_supabase().table("portal_files").insert({
+            "id": file_id,
+            "department": department,
+            "subdepartment": subdepartment,
+            "data_type": data_type,
+            "data": data,
+            "filename": filename,
+            "uploaded_by": uploaded_by,
+            "uploaded_at": time.time(),
+            "file_path": file_path or "",
+        }).execute()
+        return file_id
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         if key not in _slots:
@@ -54,6 +81,14 @@ def add_file_to_slot(department: str, subdepartment: str, data_type: str,
 
 
 def get_slot_files(department: str, subdepartment: str, data_type: str) -> list:
+    if supabase_enabled():
+        _purge_expired_supabase_files()
+        return (
+            get_supabase().table("portal_files").select("*")
+            .eq("department", department).eq("subdepartment", subdepartment)
+            .eq("data_type", data_type).order("uploaded_at").execute().data
+        )
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         return list(_slots.get(key, _empty_slot())["files"])
@@ -61,6 +96,19 @@ def get_slot_files(department: str, subdepartment: str, data_type: str) -> list:
 
 def remove_file_from_slot(department: str, subdepartment: str, data_type: str, file_id: str) -> bool:
     """Removes one specific file from a slot. Returns True if it was found and removed."""
+    if supabase_enabled():
+        client = get_supabase()
+        result = (
+            client.table("portal_files").select("file_path").eq("department", department)
+            .eq("subdepartment", subdepartment).eq("data_type", data_type)
+            .eq("id", file_id).limit(1).execute()
+        )
+        if not result.data:
+            return False
+        delete_objects([result.data[0]["file_path"]])
+        client.table("portal_files").delete().eq("id", file_id).execute()
+        return True
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         slot = _slots.get(key)
@@ -72,12 +120,33 @@ def remove_file_from_slot(department: str, subdepartment: str, data_type: str, f
 
 
 def clear_slot(department: str, subdepartment: str, data_type: str):
+    if supabase_enabled():
+        client = get_supabase()
+        result = (
+            client.table("portal_files").select("id,file_path")
+            .eq("department", department).eq("subdepartment", subdepartment)
+            .eq("data_type", data_type).execute()
+        )
+        delete_objects([row["file_path"] for row in result.data if row.get("file_path")])
+        client.table("portal_files").delete().eq("department", department).eq(
+            "subdepartment", subdepartment
+        ).eq("data_type", data_type).execute()
+        return
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         _slots[key] = _empty_slot()
 
 
 def has_data(department: str, subdepartment: str, data_type: str) -> bool:
+    if supabase_enabled():
+        result = (
+            get_supabase().table("portal_files").select("id")
+            .eq("department", department).eq("subdepartment", subdepartment)
+            .eq("data_type", data_type).limit(1).execute()
+        )
+        return bool(result.data)
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         slot = _slots.get(key)
@@ -86,6 +155,27 @@ def has_data(department: str, subdepartment: str, data_type: str) -> bool:
 
 def list_populated_slots() -> list:
     """Returns [{department, subdepartment, data_type, file_count}, ...] for every slot with data."""
+    if supabase_enabled():
+        _purge_expired_supabase_files()
+        rows = get_supabase().table("portal_files").select(
+            "department,subdepartment,data_type,uploaded_at"
+        ).execute().data
+        grouped = {}
+        for row in rows:
+            key = (row["department"], row["subdepartment"], row["data_type"])
+            slot = grouped.setdefault(key, {"file_count": 0, "latest_upload": 0})
+            slot["file_count"] += 1
+            slot["latest_upload"] = max(slot["latest_upload"], row["uploaded_at"])
+        return [
+            {
+                "department": department,
+                "subdepartment": subdepartment,
+                "data_type": data_type,
+                **values,
+            }
+            for (department, subdepartment, data_type), values in grouped.items()
+        ]
+
     with _lock:
         out = []
         for key, slot in _slots.items():
@@ -102,6 +192,14 @@ def list_populated_slots() -> list:
 
 
 def get_file_for_watcher(department: str, subdepartment: str, data_type: str, file_id: str) -> Optional[dict]:
+    if supabase_enabled():
+        result = (
+            get_supabase().table("portal_files").select("*").eq("department", department)
+            .eq("subdepartment", subdepartment).eq("data_type", data_type)
+            .eq("id", file_id).limit(1).execute()
+        )
+        return result.data[0] if result.data else None
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         slot = _slots.get(key)
@@ -115,6 +213,15 @@ def get_file_for_watcher(department: str, subdepartment: str, data_type: str, fi
 
 def update_file_data(department: str, subdepartment: str, data_type: str, file_id: str, new_data: dict):
     """Used by the file watcher when a file is edited+resaved on disk."""
+    if supabase_enabled():
+        get_supabase().table("portal_files").update({
+            "data": new_data,
+            "uploaded_at": time.time(),
+        }).eq("department", department).eq("subdepartment", subdepartment).eq(
+            "data_type", data_type
+        ).eq("id", file_id).execute()
+        return
+
     with _lock:
         key = slot_key(department, subdepartment, data_type)
         slot = _slots.get(key)

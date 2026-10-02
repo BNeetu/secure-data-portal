@@ -2,7 +2,8 @@
 
 A secure, organization-grade dashboard portal that lets administrators upload
 Excel files and instantly generates live KPIs, charts, and tables for every
-signed-in user — no database, no manual refresh, restricted to specific IPs.
+signed-in user. Local development uses file-backed stores; cloud deployments
+can use Supabase for persistent users, audit events, dashboard data, and files.
 
 Built with **FastAPI** (Python) + **React** (Vite).
 
@@ -16,7 +17,7 @@ Built with **FastAPI** (Python) + **React** (Vite).
 | Role-based access | `admin`, `manager`, `viewer` — enforced on every protected endpoint |
 | Excel upload → dashboard | Admin-only upload; backend parses in-memory and returns chart-ready JSON |
 | Auto-refresh on new upload | WebSocket (`/data/ws/live`) pushes the new dataset to every connected browser instantly |
-| No database | Users live in a JSON file; uploaded data lives in RAM; nothing is persisted permanently |
+| Persistence | Local runs use JSON and memory; cloud runs use Supabase Postgres and private Storage |
 | MFA / OTP | TOTP via Google/Microsoft Authenticator (RFC 6238), QR code shown on first login |
 | Strong password policy | 12+ chars, upper/lower/digit/symbol enforced server-side |
 | Session timeout | 15-minute access tokens, 15-minute idle auto-logout with a warning modal |
@@ -40,8 +41,8 @@ secure_portal/
 │   │   ├── core/
 │   │   │   ├── config.py        ← All settings, loaded from .env
 │   │   │   ├── security.py      ← Password hashing, JWT, TOTP
-│   │   │   ├── user_store.py    ← JSON-file user storage (no DB)
-│   │   │   ├── data_store.py    ← In-memory dataset + WebSocket broadcast
+│   │   │   ├── user_store.py    ← Supabase cloud store + local JSON fallback
+│   │   │   ├── data_store.py    ← Supabase cloud store + local memory fallback
 │   │   │   ├── audit.py         ← Append-only security event log
 │   │   │   ├── deps.py          ← Auth dependencies (current user, role checks)
 │   │   │   └── ip_allowlist.py  ← App-level IP restriction middleware
@@ -122,6 +123,42 @@ Open **http://localhost:3000**
 
 ---
 
+## Vercel + Supabase Setup
+
+The Vercel deployment uses Supabase because Vercel Functions cannot persist
+the app's local JSON files, uploads, or in-memory datasets across instances.
+
+1. Create a Supabase project and run `backend/supabase_schema.sql` in its SQL Editor.
+  This creates the required tables and the private `portal-uploads` bucket.
+2. In Vercel, add these variables to the **backend service** for Production and Preview:
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET=portal-uploads`,
+  `JWT_SECRET`, `ENV=production`, and `MFA_REQUIRED=true`.
+3. Keep `SUPABASE_SERVICE_ROLE_KEY` server-side. Never expose it as a `VITE_` variable
+  or put it in frontend code.
+4. From PowerShell in `backend/`, create a Python 3.12 environment and install
+  dependencies, then set the Supabase URL and legacy service-role key in that
+  terminal and run the admin seeder:
+
+  ```powershell
+  py -3.12 -m venv .venv
+  .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+  $env:SUPABASE_URL = "https://<project-ref>.supabase.co"
+  $env:SUPABASE_SERVICE_ROLE_KEY = "<service-role-key>"
+  .\.venv\Scripts\python.exe -m app.seed_admin
+  ```
+
+  The script prompts for the admin username and password. Never paste the
+  service-role key or password into chat or commit them to Git.
+5. Redeploy the Vercel project after setting its environment variables.
+
+Uploads are limited to 4 MB because Vercel Functions reject request bodies above
+4.5 MB. Supabase stores original workbooks privately and dashboard JSON in Postgres.
+The live dashboard also polls the database so updates work across function instances.
+Expired uploads are removed when data is accessed; serverless deployments do not
+run the local background file watcher or periodic sweeper.
+
+---
+
 ## 🔑 First Login
 
 1. Run `python -m app.seed_admin` (done automatically by `start.sh`/`start.bat`).
@@ -161,19 +198,15 @@ dev; in production, restart the service / `nginx -s reload`).
 
 ---
 
-## 📊 How the Dashboard Stays "No Database"
+## 📊 Dashboard Data and Retention
 
-- Uploaded Excel files are parsed **entirely in memory** (`pandas.read_excel`
-  on the uploaded bytes) — processed into JSON, then that JSON is what's
-  actually kept in RAM (`core/data_store.py`).
-- The raw file is also saved to disk **temporarily** (so direct re-saves —
-  e.g. editing in Excel and hitting Ctrl+S — can be detected and
-  auto-broadcast too) but is deleted automatically after `UPLOAD_RETENTION_HOURS`
-  (24h by default).
-- A new upload **replaces** the current dataset — no history is kept, per
-  the "no historical records" requirement.
-- The moment a new file is processed, every connected browser receives it
-  instantly via WebSocket — nobody needs to refresh.
+- Uploaded Excel files are processed with pandas. With Supabase configured,
+  processed dashboard JSON is stored in Postgres and original workbooks are
+  kept in the private Storage bucket for multi-file merging.
+- `UPLOAD_RETENTION_HOURS` controls expiry. In serverless mode, expired uploads
+  are pruned when a data-list request runs; local mode uses the background sweeper.
+- The frontend polls the persistent file list every 15 seconds. WebSocket updates
+  are best-effort because connections can land on different function instances.
 
 ---
 
@@ -185,8 +218,8 @@ dev; in production, restart the service / `nginx -s reload`).
 - [ ] Get a real SSL certificate (e.g. `certbot --nginx`) and update the cert paths
 - [ ] Set `ENV=production` in `.env`
 - [ ] Review `CORS_ORIGINS` — restrict to your real frontend domain
-- [ ] Back up `backend/app/data/users.json` somewhere safe (it's the only
-      record of who can log in)
+- [ ] Back up the Supabase project data; it contains user accounts, audit events,
+  dashboard records, and upload metadata.
 - [ ] Consider rotating `JWT_SECRET` periodically (this invalidates all
       sessions, which is expected)
 
@@ -231,9 +264,7 @@ Key endpoints:
 
 - **Stateless JWT logout**: logging out clears the token client-side; the
   token technically remains valid until it expires (max 15 min for access
-  tokens). True server-side revocation would need a token blocklist store,
-  which would reintroduce persistent storage — flagged here as a deliberate
-  tradeoff given the "no database" requirement.
+  tokens). A server-side token blocklist is not implemented.
 - **Single dataset at a time**: uploading a new file replaces the old one
   immediately for everyone, with no version history (matches "no historical
   records" requirement exactly).

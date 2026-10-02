@@ -38,6 +38,7 @@ export function useLiveDashboard(department, subdepartment, dataType) {
     setConnected(false)
 
     refetch()   // initial load
+    const refreshInterval = setInterval(refetch, 15000)
 
     function connect() {
       const tokens = getTokens()
@@ -89,11 +90,12 @@ export function useLiveDashboard(department, subdepartment, dataType) {
 
     return () => {
       cancelRef.current = true
+      clearInterval(refreshInterval)
       clearTimeout(reconnectRef.current)
       clearInterval(pingRef.current)
       wsRef.current?.close()
     }
-  }, [department, subdepartment, dataType])
+  }, [department, subdepartment, dataType, refetch])
 
   return { fileList, connected, refetch }
 }

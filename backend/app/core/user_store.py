@@ -1,5 +1,5 @@
 """
-Lightweight user store backed by a JSON file (no database, per requirements).
+User store backed by Supabase in cloud deployments and a JSON file locally.
 
 users.json structure:
 {
@@ -18,8 +18,8 @@ users.json structure:
   ]
 }
 
-File writes are guarded by a process-wide lock since this is a simple
-single-instance deployment (no DB transactions available).
+Local file writes are guarded by a process-wide lock. Supabase deployments
+use Postgres updates, including an atomic login-failure counter.
 """
 import json
 import threading
@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.core.config import settings
+from app.core.supabase_client import get_supabase, supabase_enabled
 
 _lock = threading.Lock()
 
@@ -55,6 +56,10 @@ def _write(data: dict):
 
 
 def get_user(username: str) -> Optional[dict]:
+    if supabase_enabled():
+        result = get_supabase().table("portal_users").select("*").eq("username", username).limit(1).execute()
+        return result.data[0] if result.data else None
+
     data = _read()
     for u in data["users"]:
         if u["username"].lower() == username.lower():
@@ -63,10 +68,29 @@ def get_user(username: str) -> Optional[dict]:
 
 
 def list_users() -> list:
+    if supabase_enabled():
+        return get_supabase().table("portal_users").select("*").order("created_at").execute().data
+
     return _read()["users"]
 
 
 def create_user(username: str, password_hash: str, role: str, totp_secret: str) -> dict:
+    if supabase_enabled():
+        user = {
+            "username": username,
+            "password_hash": password_hash,
+            "role": role,
+            "totp_secret": totp_secret,
+            "mfa_enabled": True,
+            "mfa_verified": False,
+            "failed_attempts": 0,
+            "locked_until": None,
+            "last_login": None,
+            "created_at": _now_iso(),
+        }
+        result = get_supabase().table("portal_users").insert(user).execute()
+        return result.data[0]
+
     with _lock:
         data = _read()
         if any(u["username"].lower() == username.lower() for u in data["users"]):
@@ -89,6 +113,15 @@ def create_user(username: str, password_hash: str, role: str, totp_secret: str) 
 
 
 def update_user(username: str, **fields):
+    if supabase_enabled():
+        result = (
+            get_supabase().table("portal_users").update(fields)
+            .eq("username", username).select("*").execute()
+        )
+        if not result.data:
+            raise ValueError(f"User '{username}' not found")
+        return result.data[0]
+
     with _lock:
         data = _read()
         for u in data["users"]:
@@ -101,6 +134,18 @@ def update_user(username: str, **fields):
 
 def record_failed_attempt(username: str) -> int:
     """Increments failed_attempts; locks account if threshold reached. Returns new count."""
+    if supabase_enabled():
+        lock_until = datetime.now(timezone.utc).timestamp() + settings.ACCOUNT_LOCKOUT_MINUTES * 60
+        result = get_supabase().rpc(
+            "record_failed_login",
+            {
+                "target_username": username,
+                "lockout_after": settings.MAX_FAILED_LOGIN_ATTEMPTS,
+                "lock_until": datetime.fromtimestamp(lock_until, timezone.utc).isoformat(),
+            },
+        ).execute()
+        return int(result.data or 0)
+
     with _lock:
         data = _read()
         for u in data["users"]:

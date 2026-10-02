@@ -11,6 +11,9 @@ export default function UploadWidget({ department, subdepartment, dataType, onUp
     if (!/\.(xlsx|xls)$/i.test(file.name)) {
       setMsg({ t:'err', s:'Only .xlsx or .xls files are accepted.' }); return
     }
+    if (file.size > 4 * 1024 * 1024) {
+      setMsg({ t:'err', s:'Files must be 4 MB or smaller.' }); return
+    }
     setUploading(true); setMsg(null)
     const fd = new FormData(); fd.append('file', file)
     try {

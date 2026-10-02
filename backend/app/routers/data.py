@@ -29,6 +29,7 @@ support for multiple uploaded files per slot (merged together for charting).
 import io
 import os
 import time
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -53,6 +54,7 @@ from app.core.data_store import (
 from app.core.departments import DATA_TYPES, DEPARTMENTS, DATA_TYPE_KEYS, department_list, is_valid_data_type, is_valid_department, is_valid_subdepartment, subdepartments_for
 from app.core.deps import get_current_user, require_role
 from app.core.security import decode_token
+from app.core.supabase_client import delete_objects, download_object, supabase_enabled, upload_object
 from app.core.user_store import get_user
 from app.utils.excel_engine import process_excel, process_excel_bytes
 from app.utils.hr_coil_chart_engine import generate_and_embed_charts, detect_tables
@@ -225,13 +227,25 @@ async def upload_excel(
     else:
         processed["render_mode"] = "generic"
 
-    Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    safe_name = f"{int(time.time())}_{department}_{subdepartment}_{data_type}_{Path(file.filename).name}".replace(" ", "_").replace("/", "-")
-    save_path = os.path.join(settings.UPLOAD_DIR, safe_name)
-    with open(save_path, "wb") as f:
-        f.write(contents)
+    if supabase_enabled():
+        save_path = f"{department}/{subdepartment}/{data_type}/{uuid.uuid4().hex}{ext}"
+        upload_object(save_path, contents, file.content_type or "application/octet-stream")
+    else:
+        Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+        safe_name = f"{int(time.time())}_{department}_{subdepartment}_{data_type}_{Path(file.filename).name}".replace(" ", "_").replace("/", "-")
+        save_path = os.path.join(settings.UPLOAD_DIR, safe_name)
+        with open(save_path, "wb") as f:
+            f.write(contents)
 
-    file_id = add_file_to_slot(department, subdepartment, data_type, processed, file.filename, uploader["username"], save_path)
+    try:
+        file_id = add_file_to_slot(
+            department, subdepartment, data_type, processed,
+            file.filename, uploader["username"], save_path,
+        )
+    except Exception:
+        if supabase_enabled():
+            delete_objects([save_path])
+        raise
 
     log_event(
         "upload",

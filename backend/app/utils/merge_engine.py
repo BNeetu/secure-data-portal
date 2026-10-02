@@ -12,8 +12,11 @@ If files have different/incompatible column structures, columns are merged
 on their union (pandas concat default) and missing values become NaN —
 process_excel already handles NaN safely throughout.
 """
+import io
+
 import pandas as pd
 
+from app.core.supabase_client import download_object, supabase_enabled
 from app.utils.excel_engine import process_excel
 
 
@@ -31,7 +34,8 @@ def merge_slot_files(files: list) -> dict:
             skipped.append(f["filename"])
             continue
         try:
-            df = pd.read_excel(path)
+            source = io.BytesIO(download_object(path)) if supabase_enabled() else path
+            df = pd.read_excel(source)
             df["__source_file__"] = f["filename"]  # provenance, dropped before charting below
             frames.append(df)
         except Exception:

@@ -7,9 +7,8 @@ Security layers active on every request, in order:
   2. CORSMiddleware         — restricts which frontend origins may call the API
   3. Per-route auth deps    — JWT validation + role checks (see core/deps.py)
 
-No database is used anywhere — users live in a JSON file, uploaded data
-lives in RAM (see core/data_store.py), and security events are appended to
-an audit JSONL file. This matches the "no permanent DB storage" requirement.
+Local runs may use JSON and in-memory stores. Cloud deployments configure
+Supabase Postgres and private Storage through environment variables.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -20,15 +19,22 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.ip_allowlist import IPAllowlistMiddleware
+from app.core.supabase_client import supabase_enabled
 from app.routers import auth, audit, data
 from app.utils.watcher import sweep_old_uploads, watch_for_direct_edits
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: launch background tasks
-    watcher_task = asyncio.create_task(watch_for_direct_edits())
-    sweeper_task = asyncio.create_task(sweep_old_uploads())
+    if settings.VERCEL and not supabase_enabled():
+        raise RuntimeError("Vercel deployment requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
+
+    background_tasks = []
+    if not supabase_enabled():
+        background_tasks = [
+            asyncio.create_task(watch_for_direct_edits()),
+            asyncio.create_task(sweep_old_uploads()),
+        ]
     print(f"[startup] {settings.APP_NAME} running in '{settings.ENV}' mode")
     if settings.allowed_ips_list:
         print(f"[startup] IP allowlist active: {settings.allowed_ips_list}")
@@ -36,8 +42,8 @@ async def lifespan(app: FastAPI):
         print("[startup] WARNING: No IP allowlist configured — open to all IPs. Set ALLOWED_IPS in production.")
     yield
     # Shutdown
-    watcher_task.cancel()
-    sweeper_task.cancel()
+    for task in background_tasks:
+        task.cancel()
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)

@@ -8,11 +8,11 @@ from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+BASE_DIR = Path(__file__).resolve().parent.parent  # backend/app/
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=str(BASE_DIR / ".env"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(BASE_DIR.parent / ".env"), extra="ignore")
 
     # ── App ──
     APP_NAME: str = "Secure Data Portal"
@@ -44,9 +44,15 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     # ── File upload ──
-    MAX_UPLOAD_SIZE_MB: int = 25
+    MAX_UPLOAD_SIZE_MB: int = 4
     UPLOAD_RETENTION_HOURS: int = 24  # auto-delete uploaded files after this long
     UPLOAD_DIR: str = str(BASE_DIR / "app" / "data" / "uploads")
+
+    # ── Supabase persistence (required on Vercel) ──
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_STORAGE_BUCKET: str = "portal-uploads"
+    VERCEL: bool = False
 
     # ── User store ──
     USERS_FILE: str = str(BASE_DIR / "app" / "data" / "users.json")
