@@ -116,7 +116,7 @@ def update_user(username: str, **fields):
     if supabase_enabled():
         result = (
             get_supabase().table("portal_users").update(fields)
-            .eq("username", username).select("*").execute()
+            .eq("username", username).execute()
         )
         if not result.data:
             raise ValueError(f"User '{username}' not found")
