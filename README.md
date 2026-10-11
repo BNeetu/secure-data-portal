@@ -27,6 +27,9 @@ Built with **FastAPI** (Python) + **React** (Vite).
 | Audit logs | Every login, failure, lockout, upload, and IP block is logged to `audit_log.jsonl`, viewable in the Admin panel |
 | Brute-force / suspicious activity | Failed-attempt counter + lockout; audit log surfaces patterns for review |
 
+All signed-in users can upload Excel files and view dashboard data. Only admins
+and managers can remove uploaded files or clear a section.
+
 ---
 
 ## 📁 Project Structure
@@ -169,6 +172,11 @@ run the local background file watcher or periodic sweeper.
    Authenticator or Microsoft Authenticator, then enter the 6-digit code.
 6. You're in. From then on, every login asks for username + password + the
    6-digit code from your authenticator app.
+
+Users can also create an account from the login page. Self-registered accounts
+receive the `viewer` role. All signed-in users can upload files and view the
+dashboard; only admins and managers can remove files or clear a section. The
+initial admin account must still be created with the seeder.
 
 ---
 

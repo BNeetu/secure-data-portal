@@ -8,16 +8,19 @@ export default function Login() {
   const navigate = useNavigate()
   const { completeLogin } = useAuth()
   const [stage, setStage]         = useState('password')
+  const [registering, setRegistering] = useState(false)
   const [username, setUsername]   = useState('')
   const [password, setPassword]   = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [code, setCode]           = useState('')
   const [tempToken, setTempToken] = useState(null)
   const [qrUri, setQrUri]         = useState(null)
   const [error, setError]         = useState('')
+  const [success, setSuccess]     = useState('')
   const [loading, setLoading]     = useState(false)
 
   const handlePassword = async e => {
-    e.preventDefault(); setError(''); setLoading(true)
+    e.preventDefault(); setError(''); setSuccess(''); setLoading(true)
     try {
       const { data } = await api.post('/auth/login', { username, password })
       // MFA currently disabled on the backend — login completes in one step.
@@ -32,6 +35,23 @@ export default function Login() {
       setQrUri(data.qr_provisioning_uri || null)
       setStage('mfa')
     } catch (err) { setError(err.response?.data?.detail || 'Login failed. Please check your credentials.') }
+    finally { setLoading(false) }
+  }
+
+  const handleRegister = async e => {
+    e.preventDefault(); setError(''); setSuccess('')
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    setLoading(true)
+    try {
+      const { data } = await api.post('/auth/register', { username, password })
+      setRegistering(false)
+      setPassword('')
+      setConfirmPassword('')
+      setSuccess(data.message)
+    } catch (err) { setError(err.response?.data?.detail || 'Registration failed. Please try again.') }
     finally { setLoading(false) }
   }
 
@@ -78,7 +98,7 @@ export default function Login() {
             <div style={{fontFamily:"'Segoe UI',sans-serif",fontSize:'1.1rem',
               fontWeight:700,color:'#1F4E79'}}>Secure Data Portal</div>
             <div style={{fontSize:'.68rem',color:'#AAA',marginTop:2}}>
-              {stage==='password'?'Sign in to continue':'Two-factor verification'}
+              {stage !== 'password' ? 'Two-factor verification' : registering ? 'Create your account' : 'Sign in to continue'}
             </div>
           </div>
         </div>
@@ -89,8 +109,14 @@ export default function Login() {
             ⚠️ {error}
           </div>
         )}
+        {success && (
+          <div role="status" style={{background:'#EBF5E0',color:'#3D7A1F',border:'1px solid #B8DFA0',
+            borderRadius:7,padding:'9px 13px',fontSize:'.82rem',marginBottom:14,lineHeight:1.5}}>
+            {success}
+          </div>
+        )}
 
-        {stage === 'password' && (
+        {stage === 'password' && !registering && (
           <form onSubmit={handlePassword}>
             <label style={lbl}>Username</label>
             <input style={inp} value={username}
@@ -114,6 +140,51 @@ export default function Login() {
             }}>
               {loading ? 'Checking…' : 'Continue →'}
             </button>
+            <div style={{textAlign:'center',marginTop:16,fontSize:'.8rem',color:'#777'}}>
+              Don’t have an account?{' '}
+              <button type="button" onClick={()=>{setRegistering(true);setError('');setSuccess('')}}
+                style={{border:0,padding:0,background:'none',color:'#4472C4',fontWeight:700,cursor:'pointer'}}>
+                Create an account
+              </button>
+            </div>
+          </form>
+        )}
+
+        {stage === 'password' && registering && (
+          <form onSubmit={handleRegister}>
+            <p style={{fontSize:'.78rem',color:'#777',margin:'-10px 0 16px'}}>
+              New accounts are created with viewer access.
+            </p>
+            <label style={lbl}>Username</label>
+            <input style={inp} value={username}
+              onChange={e=>setUsername(e.target.value)}
+              autoFocus required autoComplete="username" maxLength={64}/>
+            <label style={lbl}>Password</label>
+            <input style={inp} type="password" value={password}
+              onChange={e=>setPassword(e.target.value)}
+              required autoComplete="new-password"/>
+            <p style={{fontSize:'.68rem',color:'#888',marginTop:-8,marginBottom:12}}>
+              At least 12 characters, with uppercase, lowercase, a number, and a symbol.
+            </p>
+            <label style={lbl}>Confirm Password</label>
+            <input style={inp} type="password" value={confirmPassword}
+              onChange={e=>setConfirmPassword(e.target.value)}
+              required autoComplete="new-password"/>
+            <button type="submit" disabled={loading} style={{
+              width:'100%', padding:'11px',
+              background:loading?'#D6D6D6':'linear-gradient(135deg,#1F4E79,#4472C4)',
+              border:'none', borderRadius:8, color:'#fff', fontWeight:700,
+              fontSize:'.9rem', cursor:loading?'not-allowed':'pointer',
+            }}>
+              {loading ? 'Creating account…' : 'Create Account'}
+            </button>
+            <div style={{textAlign:'center',marginTop:16,fontSize:'.8rem',color:'#777'}}>
+              Already registered?{' '}
+              <button type="button" onClick={()=>{setRegistering(false);setError('')}}
+                style={{border:0,padding:0,background:'none',color:'#4472C4',fontWeight:700,cursor:'pointer'}}>
+                Sign in
+              </button>
+            </div>
           </form>
         )}
 

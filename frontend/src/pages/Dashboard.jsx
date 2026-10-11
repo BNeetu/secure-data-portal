@@ -34,7 +34,8 @@ export default function Dashboard() {
   const { department, subdepartment, dataType } = useParams()
   const { user, logout, idleWarning, resetIdleTimer } = useAuth()
   const navigate = useNavigate()
-  const canUpload = user?.role==='admin'||user?.role==='manager'
+  const canUpload = Boolean(user)
+  const canManageFiles = user?.role==='admin'||user?.role==='manager'
 
   const { fileList, connected, refetch } = useLiveDashboard(department, subdepartment, dataType)
 
@@ -181,7 +182,7 @@ export default function Dashboard() {
               <UploadWidget department={department} subdepartment={subdepartment}
                 dataType={dataType} onUploaded={()=>{setUploadSignal(s=>s+1);refetch()}}/>
             )}
-            {canUpload&&fileList.length>0&&(
+            {canManageFiles&&fileList.length>0&&(
               <button onClick={handleClearData} disabled={clearing}
                 style={hBtn('rgba(192,0,0,.3)','#FFB3B3','rgba(255,150,150,.4)')}>
                 🗑️ {clearing?'Clearing…':'Clear All'}
@@ -272,7 +273,7 @@ export default function Dashboard() {
                         </a>
                       </div>
                     </div>
-                    {canUpload&&(
+                    {canManageFiles&&(
                       <button
                         onClick={e=>{e.stopPropagation();handleRemoveFile(f.id,f.filename)}}
                         title="Remove file"

@@ -9,6 +9,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str
+
+
 class LoginResponse(BaseModel):
     mfa_required: bool
     mfa_setup_required: bool = False

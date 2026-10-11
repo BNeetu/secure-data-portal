@@ -8,7 +8,7 @@ support for multiple uploaded files per slot (merged together for charting).
   GET    /data/slots
       → every (department, subdepartment, data_type) slot that has files
 
-  POST   /data/{department}/{subdepartment}/{data_type}/upload   (admin/manager)
+  POST   /data/{department}/{subdepartment}/{data_type}/upload   (authenticated users)
       → adds a new file to the slot (does NOT replace existing files)
 
   GET    /data/{department}/{subdepartment}/{data_type}/files
@@ -154,7 +154,7 @@ async def get_populated_slots(user: dict = Depends(get_current_user)):
     return {"slots": list_populated_slots()}
 
 
-@router.post("/{department}/{subdepartment}/{data_type}/upload", dependencies=[Depends(require_role("admin", "manager"))])
+@router.post("/{department}/{subdepartment}/{data_type}/upload")
 async def upload_excel(
     department: str,
     subdepartment: str,

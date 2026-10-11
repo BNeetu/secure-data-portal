@@ -48,6 +48,7 @@ from app.schemas import (
     LoginResponse,
     MFAVerifyRequest,
     RefreshRequest,
+    RegisterRequest,
     TokenResponse,
 )
 
@@ -130,6 +131,28 @@ async def login(payload: LoginRequest, request: Request):
         temp_token=temp_token,
         qr_provisioning_uri=qr_uri,
     )
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest, request: Request):
+    username = payload.username.strip()
+    if not username:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username cannot be empty")
+
+    err = validate_password_strength(payload.password)
+    if err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+
+    if get_user(username):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
+
+    try:
+        create_user(username, hash_password(payload.password), "viewer", generate_totp_secret())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists") from exc
+
+    log_event("user_registered", username, _client_ip(request), "Self-service viewer account created", success=True)
+    return {"message": "Account created successfully. You can now sign in."}
 
 
 @router.post("/mfa/verify", response_model=TokenResponse)
