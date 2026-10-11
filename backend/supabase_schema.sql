@@ -53,13 +53,13 @@ as $$
 declare
   attempts integer;
 begin
-  update public.portal_users
-  set failed_attempts = failed_attempts + 1,
+  update public.portal_users as u
+  set failed_attempts = u.failed_attempts + 1,
       locked_until = case
-        when failed_attempts + 1 >= lockout_after then lock_until
-        else locked_until
+        when u.failed_attempts + 1 >= lockout_after then $3
+        else u.locked_until
       end
-  where username = target_username
+  where u.username = target_username
   returning failed_attempts into attempts;
 
   return coalesce(attempts, 0);
