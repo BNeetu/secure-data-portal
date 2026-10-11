@@ -3,7 +3,7 @@ import api, { getTokens } from './client'
 
 /**
  * Manages the file list for a (department, subdepartment, dataType) slot.
- * Returns { fileList, connected, refetch }
+ * Returns { fileList, connected, error, refetch }
  *
  * The Dashboard fetches individual file dashboards separately via
  * /dashboard/{file_id} — this hook only maintains the list of what files
@@ -12,6 +12,7 @@ import api, { getTokens } from './client'
 export function useLiveDashboard(department, subdepartment, dataType) {
   const [fileList,   setFileList]   = useState([])
   const [connected,  setConnected]  = useState(false)
+  const [error,      setError]      = useState('')
 
   const wsRef             = useRef(null)
   const reconnectRef      = useRef(null)
@@ -25,9 +26,16 @@ export function useLiveDashboard(department, subdepartment, dataType) {
     const enc = s => encodeURIComponent(s)
     api.get(`/data/${enc(department)}/${enc(subdepartment)}/${enc(dataType)}/files`)
       .then(({ data }) => {
-        if (!cancelRef.current) setFileList(data.files || [])
+        if (!cancelRef.current) {
+          setFileList(data.files || [])
+          setError('')
+        }
       })
-      .catch(() => {})
+      .catch(err => {
+        if (!cancelRef.current) {
+          setError(err.response?.data?.detail || 'Unable to load uploaded files. Please try again.')
+        }
+      })
   }, [department, subdepartment, dataType])
 
   // ── WebSocket: get notified when slot changes ─────────────────────────────
@@ -35,6 +43,7 @@ export function useLiveDashboard(department, subdepartment, dataType) {
     if (!department || !subdepartment || !dataType) return
     cancelRef.current = false
     setFileList([])
+    setError('')
     setConnected(false)
 
     refetch()   // initial load
@@ -97,5 +106,5 @@ export function useLiveDashboard(department, subdepartment, dataType) {
     }
   }, [department, subdepartment, dataType, refetch])
 
-  return { fileList, connected, refetch }
+  return { fileList, connected, error, refetch }
 }

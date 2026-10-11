@@ -37,10 +37,11 @@ export default function Dashboard() {
   const canUpload = Boolean(user)
   const canManageFiles = user?.role==='admin'||user?.role==='manager'
 
-  const { fileList, connected, refetch } = useLiveDashboard(department, subdepartment, dataType)
+  const { fileList, connected, error: fileListError, refetch } = useLiveDashboard(department, subdepartment, dataType)
 
   const [selectedFileId, setSelectedFileId] = useState(null)
   const [fileData, setFileData]             = useState(null)
+  const [fileLoadError, setFileLoadError]   = useState('')
   const [fileLoading, setFileLoading]       = useState(false)
   const [clearing, setClearing]             = useState(false)
   const [search, setSearch]                 = useState('')
@@ -51,14 +52,17 @@ export default function Dashboard() {
   const handleLogout = async()=>{await logout();navigate('/login')}
 
   const loadFile = useCallback(async(fileId)=>{
-    if(!fileId){setFileData(null);setSelectedFileId(null);return}
-    setFileLoading(true);setSelectedFileId(fileId)
+    if(!fileId){setFileData(null);setFileLoadError('');setSelectedFileId(null);return}
+    setFileLoading(true);setSelectedFileId(fileId);setFileLoadError('')
     try {
       const enc=s=>encodeURIComponent(s)
       const {data}=await api.get(
         `/data/${enc(department)}/${enc(subdepartment)}/${enc(dataType)}/dashboard/${fileId}`)
       setFileData(data)
-    } catch(e){setFileData(null)}
+    } catch(e){
+      setFileData(null)
+      setFileLoadError(e.response?.data?.detail || 'Unable to load this file’s dashboard. Please try again.')
+    }
     finally{setFileLoading(false)}
   },[department,subdepartment,dataType])
 
@@ -296,12 +300,12 @@ export default function Dashboard() {
         <main style={{flex:1,padding:'24px 24px',overflowX:'hidden',minWidth:0}}>
 
           {fileList.length===0&&(
-            <EmptyState icon="📂"
-              title={`No files yet — ${TYPE_LABELS[dataType]||dataType}`}
-              sub={canUpload
+            <EmptyState icon={fileListError?'⚠️':'📂'}
+              title={fileListError?'Could not load uploaded files':`No files yet — ${TYPE_LABELS[dataType]||dataType}`}
+              sub={fileListError || (canUpload
                 ?'Upload an Excel file using the button above. Charts appear instantly.'
-                :'An administrator or manager needs to upload data here.'}
-              action={canUpload&&(
+                :'An administrator or manager needs to upload data here.')}
+              action={!fileListError && canUpload&&(
                 <UploadWidget department={department} subdepartment={subdepartment}
                   dataType={dataType} onUploaded={()=>{setUploadSignal(s=>s+1);refetch()}}/>
               )}
@@ -370,7 +374,7 @@ export default function Dashboard() {
 
           {selectedFileId&&!fileLoading&&!data&&(
             <EmptyState icon="⚠️" title="Could not load file data"
-              sub="The file may have been removed or expired. Try re-uploading."/>
+              sub={fileLoadError || 'The file may have been removed or expired. Try re-uploading.'}/>
           )}
         </main>
       </div>
